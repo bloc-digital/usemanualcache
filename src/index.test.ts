@@ -160,4 +160,21 @@ describe('useManualCache', () => {
     expect(statuses[0]).toHaveProperty('url');
     expect([cache_status.VALID, cache_status.INVALID, cache_status.NOT_CACHED]).toContain(statuses[0].status);
   });
+
+  it('should handle empty cache gracefully', async () => {
+    const { result } = renderHook(() => useManualCache());
+    let response: Response | undefined = undefined;
+    await act(async () => {
+      response = await result.current.getCache('empty-cache', 'https://example.com/a');
+    });
+
+    expect(response).toBeUndefined();
+
+    let status: cache_status_enum | undefined = undefined;
+    await act(async () => {
+      status = await result.current.validateCache('empty-cache', 'https://example.com/a', { storeName: 'empty-cache' });
+    });
+
+    expect(status).toBe(cache_status.NOT_CACHED);
+  });
 });

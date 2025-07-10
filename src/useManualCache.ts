@@ -255,7 +255,7 @@ export default function useManualCache(vault: string[] = [], storeList: string =
       const cached = storage.get<BoxDescription>(storeName);
       const checkURL = absolutePath(url);
 
-      if (cached?.cacheName !== cacheName)
+      if (cached && cached.cacheName !== cacheName)
         throw new Error(`Cache name mismatch: expected ${cached?.cacheName}, got ${cacheName}`);
 
       if (!cached?.urls.includes(checkURL)) return cache_status.NOT_CACHED;
