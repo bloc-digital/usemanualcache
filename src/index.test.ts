@@ -176,5 +176,12 @@ describe('useManualCache', () => {
     });
 
     expect(status).toBe(cache_status.NOT_CACHED);
+
+    let statusList: Array<{ url: string; status: cache_status_enum }> | undefined = undefined;
+    await act(async () => {
+      statusList = await result.current.validateByStoreName('empty-cache', 'empty-cache');
+    });
+
+    expect(statusList).toEqual([]);
   });
 });
