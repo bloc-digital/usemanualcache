@@ -1,0 +1,85 @@
+{
+  "name": "@blocdigital/usemanualcache",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "React hook for caching files and keeping a log in localstorage.",
+  "author": "Bloc Digital <web@bloc.digital>",
+  "license": "MIT",
+  "keywords": [
+    "react",
+    "hooks",
+    "pwa",
+    "cache",
+    "caching",
+    "offline"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bloc-digital/usemanualcache.git"
+  },
+  "homepage": "https://github.com/bloc-digital/usemanualcache#readme",
+  "jest": {
+    "testEnvironment": "jsdom"
+  },
+  "types": "dist/types/index.d.ts",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig-cjs.json && tsc -p tsconfig-types.json",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@babel/preset-env": "^7.28.0",
+    "@babel/preset-typescript": "^7.27.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/jest": "^30.0.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@typescript-eslint/eslint-plugin": "^8.36.0",
+    "@typescript-eslint/parser": "^8.36.0",
+    "@vitejs/plugin-react-swc": "^3.10.2",
+    "babel-jest": "^30.0.4",
+    "eslint": "^9.30.1",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.5.1",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "jest": "^30.0.4",
+    "jest-environment-jsdom": "^30.0.4",
+    "node-fetch": "^2.7.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4"
+  },
+  "bugs": {
+    "url": "https://github.com/bloc-digital/usemanualcache/issues"
+  },
+  "peerDependencies": {
+    "react": "^17 || ^18 || ^19",
+    "react-dom": "^17 || ^18 || ^19"
+  },
+  "dependencies": {
+    "@blocdigital/uselocalstorage": "^0.3.1"
+  }
+}
