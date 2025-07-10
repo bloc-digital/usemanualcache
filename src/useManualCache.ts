@@ -282,6 +282,8 @@ export default function useManualCache(vault: string[] = [], storeList: string =
 
       const cached = storage.get<BoxDescription>(storeName);
 
+      if (!cached) return [];
+
       if (cached?.cacheName !== cacheName)
         throw new Error(`Cache name mismatch: expected ${cached?.cacheName}, got ${cacheName}`);
 
