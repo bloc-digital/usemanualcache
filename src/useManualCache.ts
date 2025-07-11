@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import useLocalStorage from '@blocdigital/uselocalstorage';
 
 const STORE_NAME = 'bd_cached';
@@ -75,6 +75,22 @@ export type cache_status_enum = (typeof cache_status)[keyof typeof cache_status]
 
 interface ManualCacheFunctions {
   /**
+   * Adds new URLs to a named cache and tracks them in localStorage.
+   * Uses [Cache.addAll()](https://developer.mozilla.org/docs/Web/API/Cache/addAll) to fetch and store resources.
+   *
+   * @param {string} cacheName - The name of the cache to use.
+   * @param {string[]} urls - Array of URL strings to cache.
+   * @param {Object} [options] - Optional settings.
+   * @param {string} [options.storeName="bd_cached"] - Name for localStorage "box".
+   * @returns {Promise<Array<Response | undefined>>} Array of network responses.
+   */
+  addCache: (
+    cacheName: string,
+    urls: string[],
+    options?: { storeName: string },
+  ) => Promise<Array<Response | undefined>>;
+
+  /**
    * Fetches a [Response](https://developer.mozilla.org/docs/Web/API/Response) from a named cache for a given URL.
    *
    * @param {string} cacheName - The name of the cache to open.
@@ -83,59 +99,66 @@ interface ManualCacheFunctions {
    */
   getCache: (cacheName: string, url: string) => Promise<Response | undefined>;
   /**
-   * Adds new URLs to a named cache and tracks them in localStorage.
-   * Uses [Cache.addAll()](https://developer.mozilla.org/docs/Web/API/Cache/addAll) to fetch and store resources.
+   * Fetch an array of cached [Response](https://developer.mozilla.org/docs/Web/API/Response)s for all URLs in a localStorage box.
    *
-   * @param {string} cacheName - The name of the cache to use.
-   * @param {string[]} urls - Array of URL strings to cache.
-   * @param {Object} [options] - Optional settings.
-   * @param {string} [options.storeName="bd_cached"] - Name for localStorage tracking.
-   * @returns {Promise<Array<Response | undefined>>} Array of network responses.
+   * @param {string} [storeName="bd_cached"] - Name for localStorage "box". Default: "bd_cached".
+   * @returns {Promise<Array<Response | undefined>>} Array of cached responses for all URLs in the box.
    */
-  addCache: (
-    cacheName: string,
-    urls: string[],
-    options?: { storeName: string },
-  ) => Promise<Array<Response | undefined>>;
+  getCacheByStoreName: (storeName?: string) => Promise<Array<Response | undefined>>;
+  /**
+   * Gets the name of the cache associated with a given localStorage box.
+   *
+   * @param [storeName="bd_cached"] - Name of the localStorage box to get the cache name for. Default: "bd_cached".
+   * @returns {string | undefined} The name of the cache associated with the given store name.
+   */
+  getCacheNameByStoreName: (storeName?: string) => string | undefined;
   /**
    * Removes a single URL from a named cache and updates localStorage tracking.
    *
    * @param {string} cacheName - The name of the cache to use.
    * @param {string} url - The URL to remove from the cache.
    * @param {Object} [options] - Optional settings.
-   * @param {string} [options.storeName="bd_cached"] - Name for localStorage tracking.
+   * @param {string} [options.storeName="bd_cached"] - Name for localStorage "box".
    * @returns {Promise<boolean>} True if the cache was changed, false otherwise.
    */
   removeCache: (cacheName: string, url: string, options?: { storeName?: string }) => Promise<boolean>;
   /**
    * Removes all URLs in a localStorage box from the cache, only deleting URLs not referenced in other boxes.
    *
-   * @param {string} cacheName - The name of the cache to use.
-   * @param {string} [storeName="bd_cached"] - Name for localStorage tracking. Default: "bd_cached".
+   * @param {string} [storeName="bd_cached"] - Name for localStorage "box". Default: "bd_cached".
    * @returns {Promise<Array<{ url: string; removed: boolean }>>} Array of each URL in the box with removal status.
    */
-  removeByStoreName: (cacheName: string, storeName?: string) => Promise<Array<{ url: string; removed: boolean }>>;
+  removeByStoreName: (storeName?: string) => Promise<Array<{ url: string; removed: boolean }>>;
   /**
    * Validates a single cached URL by checking both localStorage and the [Cache API](https://developer.mozilla.org/docs/Web/API/Cache).
    *
    * @param {string} cacheName - The name of the cache to use.
    * @param {string} url - The URL to validate.
    * @param {Object} [options] - Optional settings.
-   * @param {string} [options.storeName="bd_cached"] - Name for localStorage tracking.
+   * @param {string} [options.storeName="bd_cached"] - Name for localStorage "box".
    * @returns {Promise<cache_status_enum>} The cache status of the item.
    */
   validateCache: (cacheName: string, url: string, options?: { storeName: string }) => Promise<cache_status_enum>;
   /**
    * Validates all URLs in a localStorage box, returning their cache status.
    *
-   * @param {string} cacheName - The name of the cache to use.
-   * @param {string} [storeName="bd_cached"] - Name for localStorage tracking. Default: "bd_cached".
+   * @param {string} [storeName="bd_cached"] - Name for localStorage "box" to validate. Default: "bd_cached".
    * @returns {Promise<Array<{ url: string; status: cache_status_enum }>>} Array of each URL in the box with its cache status.
    */
-  validateByStoreName: (
-    cacheName: string,
-    storeName?: string,
-  ) => Promise<Array<{ url: string; status: cache_status_enum }>>;
+  validateByStoreName: (storeName?: string) => Promise<Array<{ url: string; status: cache_status_enum }>>;
+  /**
+   * Heals a localStorage box by ensuring all URLs are valid in the cache.
+   *
+   * @param storeName - Name of the localStorage box to heal. Default: "bd_cached".
+   * @returns {Promise<void>} Resolves when the cache is healed.
+   */
+  healByStoreName: (storeName?: string) => Promise<void>;
+  /**
+   * Heals all localStorage boxes by ensuring all URLs are valid in the cache.
+   *
+   * @returns {Promise<void>} Resolves when all caches are healed.
+   */
+  healAll: () => Promise<Array<void>>;
 }
 
 type BoxDescription = {
@@ -143,7 +166,15 @@ type BoxDescription = {
   urls: string[];
 };
 
-export default function useManualCache(vault: string[] = [], storeList: string = STORE_LIST) {
+/**
+ * Custom React hook for managing manual caching using the Cache API and localStorage.
+ *
+ * @param [storeList="bd_boxes"] - Name of the localStorage key that tracks cache boxes. Default: "bd_boxes".
+ * @returns {ManualCacheFunctions} An object containing functions to manage manual caching.
+ * @see https://developer.mozilla.org/docs/Web/API/Cache
+ * @see https://developer.mozilla.org/docs/Web/API/CacheStorage
+ */
+export default function useManualCache(storeList: string = STORE_LIST): ManualCacheFunctions {
   const storage = useLocalStorage('local');
 
   /**
@@ -153,8 +184,8 @@ export default function useManualCache(vault: string[] = [], storeList: string =
    * @returns {Promise<void>} Resolves when tidy is complete.
    */
   const tidyCache = useCallback(
-    async (cacheName: string): Promise<void> => {
-      if (!checkSupport()) return;
+    (cacheName: string): Promise<void> => {
+      if (!checkSupport()) return Promise.resolve();
 
       const cached = storage.get<string[]>(storeList) || [];
 
@@ -216,9 +247,32 @@ export default function useManualCache(vault: string[] = [], storeList: string =
     [storage, storeList, tidyCache],
   );
 
+  const getCacheByStoreName = useCallback<ManualCacheFunctions['getCacheByStoreName']>(
+    (storeName: string = STORE_NAME): Promise<(Response | undefined)[]> => {
+      if (!checkSupport()) return Promise.resolve([]);
+
+      const cached = storage.get<BoxDescription>(storeName);
+
+      // if the box doesn't exist, nothing to get
+      if (!cached) return Promise.resolve([]);
+
+      return Promise.all(cached.urls.map((url) => getCache(cached.cacheName, url)));
+    },
+    [storage],
+  );
+
+  const getCacheNameByStoreName = useCallback<ManualCacheFunctions['getCacheNameByStoreName']>(
+    (storeName: string = STORE_NAME) => {
+      const cached = storage.get<BoxDescription>(storeName);
+
+      return cached?.cacheName;
+    },
+    [],
+  );
+
   const removeCache = useCallback<ManualCacheFunctions['removeCache']>(
-    async (cacheName: string, url: string, options?: { storeName?: string }): Promise<boolean> => {
-      if (!checkSupport()) return false;
+    (cacheName: string, url: string, options?: { storeName?: string }): Promise<boolean> => {
+      if (!checkSupport()) return Promise.resolve(false);
 
       const { storeName = STORE_NAME } = options || {};
 
@@ -229,10 +283,11 @@ export default function useManualCache(vault: string[] = [], storeList: string =
       // update the cache list in local storage
       const cached = storage.get<BoxDescription>(storeName);
 
-      if (cached?.cacheName !== cacheName)
-        throw new Error(
-          `Cache name mismatch: expected ${cached?.cacheName}, got ${cacheName}, ${JSON.stringify(cached, null, 2)}`,
-        );
+      // if the box doesn't exist, nothing to remove
+      if (!cached) return Promise.resolve(false);
+
+      if (cached.cacheName !== cacheName)
+        throw new Error(`Cache name mismatch: expected ${cached?.cacheName}, got ${cacheName}}`);
 
       const newURL = absolutePath(url);
       const newList = cached.urls.filter((cachedUrl) => cachedUrl !== newURL);
@@ -241,9 +296,35 @@ export default function useManualCache(vault: string[] = [], storeList: string =
       // check through all boxes to see if the URL is still needed
       const stillNeeded = boxes.some((box) => (storage.get<BoxDescription>(box)?.urls || []).includes(newURL));
 
-      return stillNeeded ? false : window.caches.open(cacheName).then((store) => store.delete(newURL));
+      return stillNeeded ? Promise.resolve(false) : window.caches.open(cacheName).then((store) => store.delete(newURL));
     },
     [storage, storeList],
+  );
+
+  const removeByStoreName = useCallback<ManualCacheFunctions['removeByStoreName']>(
+    async (storeName: string = STORE_NAME) => {
+      if (!checkSupport()) return [];
+
+      const cached = storage.get<BoxDescription>(storeName);
+
+      // if the box doesn't exist, nothing to remove
+      if (!cached) return [];
+
+      const response = await Promise.all(
+        cached.urls.map(async (url) => ({ url, removed: await removeCache(cached.cacheName, url, { storeName }) })),
+      );
+
+      // Keep track of all boxes
+      const boxes = storage.get<string[]>(storeList) || [];
+      storage.set<string[]>(
+        storeList,
+        boxes.filter((n) => n !== storeName),
+      );
+      storage.remove(storeName);
+
+      return response;
+    },
+    [removeCache, storage, storeList],
   );
 
   const validateCache = useCallback<ManualCacheFunctions['validateCache']>(
@@ -274,69 +355,87 @@ export default function useManualCache(vault: string[] = [], storeList: string =
   );
 
   const validateByStoreName = useCallback<ManualCacheFunctions['validateByStoreName']>(
-    async (
-      cacheName: string,
-      storeName: string = STORE_NAME,
-    ): Promise<Array<{ url: string; status: cache_status_enum }>> => {
-      if (!checkSupport()) return [];
+    (storeName: string = STORE_NAME): Promise<Array<{ url: string; status: cache_status_enum }>> => {
+      if (!checkSupport()) return Promise.resolve([]);
 
       const cached = storage.get<BoxDescription>(storeName);
 
-      if (!cached) return [];
+      if (!cached) return Promise.resolve([]);
 
-      if (cached?.cacheName !== cacheName)
-        throw new Error(`Cache name mismatch: expected ${cached?.cacheName}, got ${cacheName}`);
-
-      return await Promise.all(
-        cached.urls.map(async (url) => ({ url, status: await validateCache(cacheName, url, { storeName }) })),
+      return Promise.all(
+        cached.urls.map(async (url) => ({ url, status: await validateCache(cached.cacheName, url, { storeName }) })),
       );
     },
     [storage, validateCache],
   );
 
-  const removeByStoreName = useCallback<ManualCacheFunctions['removeByStoreName']>(
-    async (cacheName: string, storeName: string = STORE_NAME) => {
-      if (!checkSupport()) return [];
+  const healByStoreName = useCallback<ManualCacheFunctions['healByStoreName']>(
+    async (storeName: string = STORE_NAME) => {
+      if (!checkSupport()) return;
 
       const cached = storage.get<BoxDescription>(storeName);
 
-      if (cached?.cacheName !== cacheName)
-        throw new Error(`Cache name mismatch: expected ${cached?.cacheName}, got ${cacheName}`);
+      // if the box doesn't exist, nothing to heal
+      if (!cached) return;
 
-      const response = await Promise.all(
-        cached.urls.map(async (url) => ({ url, removed: await removeCache(cacheName, url, { storeName }) })),
+      const { cacheName } = cached;
+
+      // tidy the cache
+      await tidyCache(cacheName);
+
+      // get list of problematic URLs
+      const urls = await validateByStoreName(storeName);
+      const invalidUrls = urls.reduce<string[]>(
+        (list, { url, status }) => (status === cache_status.INVALID ? [...list, url] : list),
+        [],
       );
 
-      // Keep track of all boxes
-      const boxes = storage.get<string[]>(storeList) || [];
-      storage.set<string[]>(
-        storeList,
-        boxes.filter((n) => n !== storeName),
-      );
-      storage.remove(storeName);
+      // if there are no invalid URLs, nothing to heal
+      if (invalidUrls.length === 0) return;
 
-      return response;
+      // re-add the invalid URLs to the cache
+      const myCache = await window.caches.open(cacheName);
+
+      try {
+        await myCache.addAll(invalidUrls);
+      } catch (err) {
+        console.warn(`Error healing cache ${cacheName}:`, err);
+      }
     },
-    [removeCache, storage, storeList],
+    [storage, tidyCache, validateByStoreName],
   );
 
-  // when app starts ensure cache is initialised
-  useEffect(() => {
-    if (!window.caches) return;
+  const healAll = useCallback<ManualCacheFunctions['healAll']>(() => {
+    if (!checkSupport()) return Promise.resolve([]);
 
-    const cached = storage.get<string[]>(storeList);
+    const cached = storage.get<string[]>(storeList) || [];
 
-    if (!cached) {
-      storage.init<string[]>(storeList, []);
-
-      return;
-    }
-
-    for (const v of Array.isArray(vault) ? vault : [vault]) tidyCache(v);
-  }, [storage, storeList, tidyCache, vault]);
+    return Promise.all(cached.map((storeName) => healByStoreName(storeName)));
+  }, [healByStoreName, storage, storeList]);
 
   return useMemo<ManualCacheFunctions>(
-    () => ({ getCache, addCache, removeCache, removeByStoreName, validateCache, validateByStoreName }),
-    [addCache, removeCache, removeByStoreName, validateCache, validateByStoreName],
+    () => ({
+      addCache,
+      getCache,
+      getCacheByStoreName,
+      getCacheNameByStoreName,
+      healAll,
+      healByStoreName,
+      removeByStoreName,
+      removeCache,
+      validateByStoreName,
+      validateCache,
+    }),
+    [
+      addCache,
+      getCacheByStoreName,
+      getCacheNameByStoreName,
+      healAll,
+      healByStoreName,
+      removeByStoreName,
+      removeCache,
+      validateByStoreName,
+      validateCache,
+    ],
   );
 }
