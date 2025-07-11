@@ -4,8 +4,8 @@ import { Response } from 'node-fetch';
 import useManualCache, { cache_status, type cache_status_enum } from './useManualCache';
 
 // Mock useLocalStorage
+const store: Record<string, any> = {};
 jest.mock('@blocdigital/uselocalstorage', () => {
-  let store: Record<string, any> = {};
   return () => ({
     get: (key: string) => store[key],
     set: (key: string, value: any) => {
@@ -48,6 +48,7 @@ beforeAll(() => {
 beforeEach(() => {
   // Clear all mock storage and caches
   for (const key in cacheStore) delete cacheStore[key];
+  for (const key in store) delete store[key];
 });
 
 describe('useManualCache', () => {
@@ -91,16 +92,35 @@ describe('useManualCache', () => {
     expect(text).toContain('data for');
   });
 
+  it('getCacheByStoreName should retrieve an array of cached responses', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const urls = ['https://example.com/a', 'https://example.com/b'];
+    await act(async () => {
+      await result.current.addCache('getCacheByStoreName', urls, { storeName: 'getCacheByStoreName' });
+    });
+    let response: Array<Response | undefined> = [];
+    await act(async () => {
+      response = await result.current.getCacheByStoreName('getCacheByStoreName');
+    });
+
+    expect(response.length).toBe(2);
+    expect(response[0]).toBeInstanceOf(Response);
+    expect(response[1]).toBeInstanceOf(Response);
+  });
+
   it('removeCache should remove a URL from cache and localStorage', async () => {
     const { result } = renderHook(() => useManualCache());
     const url = 'https://example.com/a';
     await act(async () => {
       await result.current.addCache('test-cache', [url]);
     });
+
     let removed: boolean = false;
     await act(async () => {
       removed = await result.current.removeCache('test-cache', url);
     });
+
+    console.log(url, removed);
 
     expect(removed).toBe(true);
 
@@ -139,7 +159,7 @@ describe('useManualCache', () => {
     });
     const removed: Array<{ url: string; removed: boolean }> = [];
     await act(async () => {
-      removed.push(...(await result.current.removeByStoreName('test-cache', undefined)));
+      removed.push(...(await result.current.removeByStoreName()));
     });
     expect(removed).toHaveLength(2);
     expect(removed[0].removed).toBe(true);
@@ -154,7 +174,7 @@ describe('useManualCache', () => {
     });
     let statuses: Array<{ url: string; status: cache_status_enum }> = [];
     await act(async () => {
-      statuses = await result.current.validateByStoreName('test-cache');
+      statuses = await result.current.validateByStoreName();
     });
     expect(statuses).toHaveLength(2);
     expect(statuses[0]).toHaveProperty('url');
@@ -179,9 +199,99 @@ describe('useManualCache', () => {
 
     let statusList: Array<{ url: string; status: cache_status_enum }> | undefined = undefined;
     await act(async () => {
-      statusList = await result.current.validateByStoreName('empty-cache', 'empty-cache');
+      statusList = await result.current.validateByStoreName('empty-cache');
     });
 
     expect(statusList).toEqual([]);
+
+    let removed: boolean | undefined = undefined;
+    await act(async () => {
+      removed = await result.current.removeCache('empty-cache', 'https://example.com/a', { storeName: 'empty-cache' });
+    });
+
+    expect(removed).toBe(false);
+
+    let removedList: Array<{ url: string; removed: boolean }> | undefined = undefined;
+    await act(async () => {
+      removedList = await result.current.removeByStoreName('empty-cache');
+    });
+
+    expect(removedList).toEqual([]);
+  });
+
+  it('getCacheNameByStoreName returns the correct cache name', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const cacheName = 'test-cache';
+    await act(async () => {
+      await result.current.addCache(cacheName, ['https://example.com/a'], { storeName: 'test-store' });
+    });
+    let name: string | undefined = undefined;
+    await act(async () => {
+      name = result.current.getCacheNameByStoreName('test-store');
+    });
+
+    expect(name).toBe(cacheName);
+  });
+
+  it('getCacheByStoreName returns all cached responses for a box', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const urls = ['https://example.com/a', 'https://example.com/b'];
+    await act(async () => {
+      await result.current.addCache('test-cache', urls, { storeName: 'box1' });
+    });
+    let responses: Array<Response | undefined> = [];
+    await act(async () => {
+      responses = await result.current.getCacheByStoreName('box1');
+    });
+    expect(responses).toHaveLength(2);
+    expect(responses[0]).toBeInstanceOf(Response);
+    expect(responses[1]).toBeInstanceOf(Response);
+  });
+
+  it('healByStoreName re-adds missing/invalid URLs to the cache', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const urls = ['https://example.com/a', 'https://example.com/b'];
+    await act(async () => {
+      await result.current.addCache('test-cache', urls, { storeName: 'box1' });
+    });
+    // Simulate a missing cache entry
+    const cache = await window.caches.open('test-cache');
+    cache.delete('https://example.com/a');
+    // Now heal
+    await act(async () => {
+      await result.current.healByStoreName('box1');
+    });
+    let responses: Array<Response | undefined> = [];
+    await act(async () => {
+      responses = await result.current.getCacheByStoreName('box1');
+    });
+    expect(responses[0]).toBeInstanceOf(Response);
+    expect(responses[1]).toBeInstanceOf(Response);
+  });
+
+  it('healAll runs healByStoreName for all boxes', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const urls1 = ['https://example.com/a'];
+    const urls2 = ['https://example.com/b'];
+    await act(async () => {
+      await result.current.addCache('test-cache', urls1, { storeName: 'box1' });
+      await result.current.addCache('test-cache', urls2, { storeName: 'box2' });
+    });
+    // Simulate a missing cache entry in both boxes
+    const cache = await window.caches.open('test-cache');
+    cache.delete('https://example.com/a');
+    cache.delete('https://example.com/b');
+    // Now heal all
+    await act(async () => {
+      await result.current.healAll();
+    });
+    let responses1: Array<Response | undefined> = [];
+    let responses2: Array<Response | undefined> = [];
+    await act(async () => {
+      responses1 = await result.current.getCacheByStoreName('box1');
+      responses2 = await result.current.getCacheByStoreName('box2');
+    });
+    expect(responses1[0]).toBeInstanceOf(Response);
+    expect(responses2[0]).toBeInstanceOf(Response);
   });
 });
