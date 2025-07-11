@@ -83,7 +83,7 @@ enum CACHE {
 }
 
 export default function ReadLaterToggle({ pageId, pageUrl, assetUrls }) {
-  const { addCache, removeByStoreName, validateByStoreName } = useManualCache();
+  const { addCache, healByStoreName, removeByStoreName, validateByStoreName } = useManualCache();
   const [status, setStatus] = useState(CACHE.NOT_CHECKED);
 
   // Save the main page and all its assets for offline reading
@@ -103,7 +103,7 @@ export default function ReadLaterToggle({ pageId, pageUrl, assetUrls }) {
   const handleRemove = async () => {
     setStatus(CACHE.CHECKING);
     try {
-      await removeByStoreName('assets', `${pageId}_assets`);
+      await removeByStoreName(`${pageId}_assets`);
       setStatus(CACHE.NOT_CACHED);
       alert('Removed cached assets for this page.');
     } catch (e) {
@@ -116,7 +116,7 @@ export default function ReadLaterToggle({ pageId, pageUrl, assetUrls }) {
   const handleValidate = async () => {
     setStatus(CACHE.CHECKING);
     try {
-      const results = await validateByStoreName('assets', `${pageId}_assets`);
+      const results = await validateByStoreName(`${pageId}_assets`);
       const allValid = results.every((r) => r.status === 2);
       setStatus(allValid ? CACHE.CACHED_SUCCESSFULLY : CACHE.NOT_CACHED);
       alert(allValid ? 'All assets are cached!' : 'Some assets are missing or invalid.');
@@ -133,11 +133,32 @@ export default function ReadLaterToggle({ pageId, pageUrl, assetUrls }) {
     (async () => {
       setStatus(CACHE.CHECKING);
       try {
-        const results = await validateByStoreName('assets', `${pageId}_assets`);
+        const results = await validateByStoreName(`${pageId}_assets`);
+
+        if (results === 0) {
+          setStatus(CACHE.NOT_CACHED);
+
+          return;
+        }
+
         const allValid = results.every((r) => r.status === 2);
-        setStatus(
-          results.length === 0 ? CACHE.NOT_CACHED : allValid ? CACHE.CACHED_SUCCESSFULLY : CACHE.CACHED_WITH_ERROR,
-        );
+
+        if (allValid) {
+          setStatus(CACHE.CACHED_SUCCESSFULLY);
+
+          return;
+        }
+
+        // try and fix it
+        if (navigator.onLine) {
+          await healByStoreName(`${pageId}_assets`);
+
+          setStatus(CACHE.CACHED_SUCCESSFULLY);
+
+          return;
+        }
+
+        setStatus(CACHE.CACHED_WITH_ERROR);
       } catch {
         setStatus(CACHE.CACHED_WITH_ERROR);
       }
@@ -187,12 +208,16 @@ Each "box" in localStorage stores both the list of URLs and the name of the cach
 
 Returns an object with the following methods:
 
-- `getCache(name, url)` – Get a cached [Response](https://developer.mozilla.org/docs/Web/API/Response) for a URL (or undefined if not found).
 - `addCache(cacheName, urls, options?)` – Add URLs to the specified cache and track them in a localStorage box. Throws if the box was created for a different cache.
+- `getCache(cacheName, url)` – Get a cached [Response](https://developer.mozilla.org/docs/Web/API/Response) for a URL (or undefined if not found).
+- `getCacheByStoreName(storeName?)` – Get all cached [Response](https://developer.mozilla.org/docs/Web/API/Response)s for all URLs in a box.
+- `getCacheNameByStoreName(storeName?)` – Get the name of the cache associated with a given localStorage box.
 - `removeCache(cacheName, url, options?)` – Remove a URL from the specified cache and its box. Throws if the box was created for a different cache.
-- `removeByStoreName(cacheName, storeName?)` – Remove all URLs in a box from the specified cache (only removes from cache if not referenced in other boxes). Throws if the box was created for a different cache.
+- `removeByStoreName(storeName?)` – Remove all URLs in a box from the cache (only removes from cache if not referenced in other boxes).
 - `validateCache(cacheName, url, options?)` – Check if a URL is present and valid in the specified cache and box. Throws if the box was created for a different cache.
-- `validateByStoreName(cacheName, storeName?)` – Validate all URLs in a box for the specified cache. Throws if the box was created for a different cache.
+- `validateByStoreName(storeName?)` – Validate all URLs in a box for the specified cache. Throws if the box was created for a different cache.
+- `healByStoreName(storeName?)` – Ensure all URLs in a box are present and valid in the cache (re-adds missing/invalid URLs).
+- `healAll()` – Ensure all boxes are in sync with their caches (re-adds missing/invalid URLs for all boxes).
 
 #### Status Codes
 
@@ -202,10 +227,17 @@ Returns an object with the following methods:
 
 ### How It Works: LocalStorage "Boxes" and Cache Mapping
 
-Each box in localStorage is now an object with two properties:
+Each box in localStorage is an object with two properties:
 
 - `cacheName`: The name of the CacheStorage this box is associated with.
 - `urls`: The list of URLs tracked for that cache.
+
+The API also provides `getCacheByStoreName`, `getCacheNameByStoreName`, `healByStoreName`, and `healAll` for advanced cache management:
+
+- `getCacheByStoreName(storeName?)`: Returns all cached responses for the URLs in a box.
+- `getCacheNameByStoreName(storeName?)`: Returns the name of the cache associated with a given localStorage box.
+- `healByStoreName(storeName?)`: Checks all URLs in a box and re-adds any that are missing or invalid in the cache.
+- `healAll()`: Runs `healByStoreName` for every box, ensuring all boxes and caches are in sync.
 
 This strict mapping ensures that all operations on a box are always performed against the correct cache. If you try to use a box with a different cache name, an error will be thrown. This prevents accidental cross-cache operations and keeps your cache and box data in sync.
 
@@ -215,7 +247,7 @@ This approach provides two main benefits:
 
 2. **Safe Cache Purging:** When you remove (purge) a cache box, the hook only removes URLs from the browser cache if they are not still referenced in any other box. This prevents accidentally deleting cached resources that are still needed elsewhere in your app.
 
-This design is especially useful for apps that need to manage multiple sets of cached resources, want to avoid cache bloat and stale data, or need to keep different resource groups isolated. The strict mapping between boxes and caches prevents accidental cross-cache operations.
+This design is especially useful for apps that need to manage multiple sets of cached resources, want to avoid cache bloat and stale data, or need to keep different resource groups isolated. The strict mapping between boxes and caches prevents accidental cross-cache operations. The healing functions help keep your cache and box data in sync, even if something goes wrong (e.g., cache eviction, manual tampering, or network errors).
 
 ### Notes & Limitations
 
