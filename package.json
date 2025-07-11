@@ -1,7 +1,7 @@
 {
   "name": "@blocdigital/usemanualcache",
   "type": "module",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "React hook for caching files and keeping a log in localstorage.",
   "author": "Bloc Digital <web@bloc.digital>",
   "license": "MIT",
