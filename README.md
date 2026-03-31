@@ -208,7 +208,7 @@ Each "box" in localStorage stores both the list of URLs and the name of the cach
 
 Returns an object with the following methods:
 
-- `addCache(cacheName, urls, options?)` – Add URLs to the specified cache and track them in a localStorage box. Throws if the box was created for a different cache.
+- `addCache(cacheName, urls, options?)` – Add URLs to the specified cache and track them in a localStorage box. Each entry can be a plain URL string or a [`cacheURLObject`](#cacheurlobject) (see below). Throws if the box was created for a different cache.
 - `getCache(cacheName, url)` – Get a cached [Response](https://developer.mozilla.org/docs/Web/API/Response) for a URL (or undefined if not found).
 - `getCacheByStoreName(storeName?)` – Get all cached [Response](https://developer.mozilla.org/docs/Web/API/Response)s for all URLs in a box.
 - `getCacheNameByStoreName(storeName?)` – Get the name of the cache associated with a given localStorage box.
@@ -218,6 +218,71 @@ Returns an object with the following methods:
 - `validateByStoreName(storeName?)` – Validate all URLs in a box for the specified cache. Throws if the box was created for a different cache.
 - `healByStoreName(storeName?)` – Ensure all URLs in a box are present and valid in the cache (re-adds missing/invalid URLs).
 - `healAll()` – Ensure all boxes are in sync with their caches (re-adds missing/invalid URLs for all boxes).
+
+#### cacheURLObject
+
+When calling `addCache`, each URL can be provided as either a plain `string` or a `cacheURLObject`:
+
+```ts
+type cacheURLObject = { url: string; fetchUrl: string };
+```
+
+| Property   | Description                                                   |
+| ---------- | ------------------------------------------------------------- |
+| `url`      | The stable key used to store and look up the cached resource. |
+| `fetchUrl` | The URL actually fetched over the network.                    |
+
+When a plain string is provided, both `url` and `fetchUrl` are treated as the same value.
+
+##### Signed URLs
+
+Signed URLs (e.g. AWS S3 pre-signed URLs, Azure SAS URLs, or GCS signed URLs) embed an expiring signature in the query string. This means the same resource has a different URL every time a signed link is generated—which breaks normal Cache API lookups because the key never matches.
+
+`cacheURLObject` solves this by letting you separate the **stable cache key** (`url`) from the **signed fetch URL** (`fetchUrl`):
+
+- `url` — the canonical, unsigned path used as the cache key (e.g. `https://cdn.example.com/files/report.pdf`)
+- `fetchUrl` — the signed URL including the token/signature, used only to perform the network request
+
+The resource is stored under the stable key, so subsequent lookups with `getCache`, `validateCache`, or `removeCache` always work with the clean URL, regardless of how the signature changes.
+
+```tsx
+import useManualCache from '@blocdigital/usemanualcache';
+
+export default function SignedFileCache({ files }) {
+  // files: [{ stableUrl: string; signedUrl: string }]
+  const { addCache, getCache } = useManualCache();
+
+  const handleCache = async () => {
+    await addCache(
+      'protected-files',
+      files.map(({ stableUrl, signedUrl }) => ({
+        url: stableUrl, // used as the cache key
+        fetchUrl: signedUrl, // fetched over the network (contains expiring signature)
+      })),
+    );
+  };
+
+  const handleGet = async (stableUrl: string) => {
+    // Look up by the stable URL — no need to know the current signed URL
+    const response = await getCache('protected-files', stableUrl);
+    if (response) {
+      const blob = await response.blob();
+      // use blob...
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={handleCache}>Cache Protected Files</button>
+      {files.map((f) => (
+        <button key={f.stableUrl} onClick={() => handleGet(f.stableUrl)}>
+          Load {f.stableUrl}
+        </button>
+      ))}
+    </div>
+  );
+}
+```
 
 #### Status Codes
 
