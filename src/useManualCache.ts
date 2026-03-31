@@ -73,6 +73,8 @@ const getCache: ManualCacheFunctions['getCache'] = async (
 export const cache_status = Object.freeze({ NOT_CACHED: 0, INVALID: 1, VALID: 2 });
 export type cache_status_enum = (typeof cache_status)[keyof typeof cache_status];
 
+export type cacheURLObject = { url: string; fetchUrl: string };
+
 interface ManualCacheFunctions {
   /**
    * Adds new URLs to a named cache and tracks them in localStorage.
@@ -86,7 +88,7 @@ interface ManualCacheFunctions {
    */
   addCache: (
     cacheName: string,
-    urls: string[],
+    urls: (string | cacheURLObject)[],
     options?: { storeName: string },
   ) => Promise<Array<Response | undefined>>;
 
@@ -150,15 +152,15 @@ interface ManualCacheFunctions {
    * Heals a localStorage box by ensuring all URLs are valid in the cache.
    *
    * @param storeName - Name of the localStorage box to heal. Default: "bd_cached".
-   * @returns {Promise<void>} Resolves when the cache is healed.
+   * @returns {Promise<boolean | void>} Resolves when the cache is healed.
    */
-  healByStoreName: (storeName?: string) => Promise<void>;
+  healByStoreName: (storeName?: string) => Promise<boolean | void>;
   /**
    * Heals all localStorage boxes by ensuring all URLs are valid in the cache.
    *
-   * @returns {Promise<void>} Resolves when all caches are healed.
+   * @returns {Promise<Array<void | boolean>>} Resolves when all caches are healed.
    */
-  healAll: () => Promise<Array<void>>;
+  healAll: () => Promise<Array<void | boolean>>;
 }
 
 type BoxDescription = {
@@ -204,10 +206,12 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
   const addCache = useCallback<ManualCacheFunctions['addCache']>(
     async (
       cacheName: string,
-      urls: string[],
+      urls: (string | cacheURLObject)[],
       options?: { storeName: string },
     ): Promise<Array<Response | undefined>> => {
       if (!checkSupport()) return [];
+
+      const entries = urls.map((item) => (typeof item === 'string' ? { url: item, fetchUrl: item } : item));
 
       const { storeName = STORE_NAME } = options || {};
 
@@ -221,18 +225,27 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
       if (box && box.cacheName !== cacheName)
         throw new Error(`Cache name mismatch: expected ${box?.cacheName}, got ${cacheName}`);
 
-      const newURLs = urls.map((url) => absolutePath(url));
+      const newURLs = entries.map(({ url }) => absolutePath(url));
       const _cached = Array.from(new Set([...(box?.urls || []), ...newURLs]));
 
       storage.set<BoxDescription>(storeName, { cacheName, urls: _cached });
 
       // open the cache
       const myCache = await window.caches.open(cacheName);
-      const keys = await myCache.keys();
 
       try {
-        // fetch and cache all URLs in parallel
-        await myCache.addAll(newURLs.filter((key) => keys.findIndex(({ url }) => url === key) === -1));
+        await Promise.all(
+          entries.map(async ({ url, fetchUrl }) => {
+            const key = absolutePath(url);
+            const requestUrl = absolutePath(fetchUrl || url);
+
+            // Check if it's already in cache to avoid redundant downloads
+            if (await myCache.match(key)) return;
+
+            const response = await fetch(requestUrl);
+            if (response.ok) await myCache.put(key, response);
+          }),
+        );
       } catch (err) {
         console.warn(`Error adding to cache ${cacheName}: ${err}`);
       }
@@ -371,12 +384,12 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
   const healByStoreName = useCallback<ManualCacheFunctions['healByStoreName']>(
     async (storeName: string = STORE_NAME) => {
-      if (!checkSupport()) return;
+      if (!checkSupport()) return true;
 
       const cached = storage.get<BoxDescription>(storeName);
 
       // if the box doesn't exist, nothing to heal
-      if (!cached) return;
+      if (!cached) return true;
 
       const { cacheName } = cached;
 
@@ -391,15 +404,19 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
       );
 
       // if there are no invalid URLs, nothing to heal
-      if (invalidUrls.length === 0) return;
+      if (invalidUrls.length === 0) return true;
 
       // re-add the invalid URLs to the cache
       const myCache = await window.caches.open(cacheName);
 
       try {
         await myCache.addAll(invalidUrls);
+
+        return true;
       } catch (err) {
         console.warn(`Error healing cache ${cacheName}:`, err);
+
+        return false;
       }
     },
     [storage, tidyCache, validateByStoreName],
