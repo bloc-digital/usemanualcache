@@ -1,5 +1,4 @@
 import { renderHook, act } from '@testing-library/react';
-import { Response } from 'node-fetch';
 
 import useManualCache, { cache_status, type cache_status_enum } from './useManualCache';
 
@@ -32,6 +31,9 @@ beforeAll(() => {
         return {
           keys: jest.fn(async () => Array.from(cacheStore[name].keys()).map((url) => ({ url }))),
           match: jest.fn(async (url: string) => cacheStore[name].get(url)),
+          put: jest.fn(async (url: string, response: Response) => {
+            cacheStore[name].set(url, response);
+          }),
           addAll: jest.fn(async (urls: string[]) => {
             urls.forEach((url) => {
               cacheStore[name].set(url, createMockResponse(url));
@@ -42,6 +44,13 @@ beforeAll(() => {
       }),
     },
     configurable: true,
+  });
+});
+
+beforeAll(() => {
+  jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => {
+    const urlString = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+    return createMockResponse(urlString);
   });
 });
 
@@ -66,7 +75,7 @@ describe('useManualCache', () => {
   it('addCache should add URLs to cache and localStorage', async () => {
     const { result } = renderHook(() => useManualCache());
     const urls = ['https://example.com/a', 'https://example.com/b'];
-    const responses: Array<Response> = [];
+    const responses: Array<Response | undefined> = [];
     await act(async () => {
       responses.push(...(await result.current.addCache('test-cache', urls)));
     });
@@ -88,7 +97,7 @@ describe('useManualCache', () => {
     });
 
     expect(response).toBeInstanceOf(Response);
-    const text = await response.text();
+    const text = await response!.text();
     expect(text).toContain('data for');
   });
 
