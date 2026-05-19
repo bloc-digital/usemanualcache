@@ -49,26 +49,26 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
-    "@babel/preset-env": "^7.29.2",
+    "@babel/preset-env": "^7.29.5",
     "@babel/preset-typescript": "^7.28.5",
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^30.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@typescript-eslint/eslint-plugin": "^8.58.0",
-    "@typescript-eslint/parser": "^8.58.0",
-    "@vitejs/plugin-react-swc": "^4.3.0",
-    "babel-jest": "^30.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "@vitejs/plugin-react-swc": "^4.3.1",
+    "babel-jest": "^30.4.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.5.2",
-    "jest": "^30.3.0",
-    "jest-environment-jsdom": "^30.3.0",
-    "prettier": "^3.8.1",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "vite": "^7.3.3"
   },
   "bugs": {
     "url": "https://github.com/bloc-digital/usemanualcache/issues"
@@ -77,6 +77,6 @@
     "react": "^17 || ^18 || ^19"
   },
   "dependencies": {
-    "@blocdigital/uselocalstorage": "^0.3.1"
+    "@blocdigital/uselocalstorage": "^0.4.1"
   }
 }

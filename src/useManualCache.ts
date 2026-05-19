@@ -189,11 +189,11 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
     (cacheName: string): Promise<void> => {
       if (!checkSupport()) return Promise.resolve();
 
-      const cached = storage.get<string[]>(storeList) || [];
+      const cached = storage?.get<string[]>(storeList) || [];
 
       // get all urls from relevant boxes to see what we need to keep
       const combinedList = cached.reduce<string[]>((list, storeName) => {
-        const box = storage.get<BoxDescription>(storeName);
+        const box = storage?.get<BoxDescription>(storeName);
 
         return box?.cacheName === cacheName ? [...list, ...box.urls] : list;
       }, []);
@@ -216,11 +216,11 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
       const { storeName = STORE_NAME } = options || {};
 
       // Keep track of all boxes
-      const boxes = storage.get<string[]>(storeList) || [];
-      if (!boxes.includes(storeName)) storage.set<string[]>(storeList, [...boxes, storeName]);
+      const boxes = storage?.get<string[]>(storeList) || [];
+      if (!boxes.includes(storeName)) storage?.set<string[]>(storeList, [...boxes, storeName]);
 
       // update the cache list in local storage
-      const box = storage.get<BoxDescription>(storeName);
+      const box = storage?.get<BoxDescription>(storeName);
 
       if (box && box.cacheName !== cacheName)
         throw new Error(`Cache name mismatch: expected ${box?.cacheName}, got ${cacheName}`);
@@ -228,7 +228,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
       const newURLs = entries.map(({ url }) => absolutePath(url));
       const _cached = Array.from(new Set([...(box?.urls || []), ...newURLs]));
 
-      storage.set<BoxDescription>(storeName, { cacheName, urls: _cached });
+      storage?.set<BoxDescription>(storeName, { cacheName, urls: _cached });
 
       // open the cache
       const myCache = await window.caches.open(cacheName);
@@ -264,7 +264,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
     (storeName: string = STORE_NAME): Promise<(Response | undefined)[]> => {
       if (!checkSupport()) return Promise.resolve([]);
 
-      const cached = storage.get<BoxDescription>(storeName);
+      const cached = storage?.get<BoxDescription>(storeName);
 
       // if the box doesn't exist, nothing to get
       if (!cached) return Promise.resolve([]);
@@ -276,7 +276,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
   const getCacheNameByStoreName = useCallback<ManualCacheFunctions['getCacheNameByStoreName']>(
     (storeName: string = STORE_NAME) => {
-      const cached = storage.get<BoxDescription>(storeName);
+      const cached = storage?.get<BoxDescription>(storeName);
 
       return cached?.cacheName;
     },
@@ -290,11 +290,11 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
       const { storeName = STORE_NAME } = options || {};
 
       // Keep track of all boxes
-      const boxes = storage.get<string[]>(storeList) || [];
-      if (!boxes.includes(storeName)) storage.set<string[]>(storeList, [...boxes, storeName]);
+      const boxes = storage?.get<string[]>(storeList) || [];
+      if (!boxes.includes(storeName)) storage?.set<string[]>(storeList, [...boxes, storeName]);
 
       // update the cache list in local storage
-      const cached = storage.get<BoxDescription>(storeName);
+      const cached = storage?.get<BoxDescription>(storeName);
 
       // if the box doesn't exist, nothing to remove
       if (!cached) return Promise.resolve(false);
@@ -304,10 +304,10 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
       const newURL = absolutePath(url);
       const newList = cached.urls.filter((cachedUrl) => cachedUrl !== newURL);
-      storage.set<BoxDescription>(storeName, { cacheName, urls: newList });
+      storage?.set<BoxDescription>(storeName, { cacheName, urls: newList });
 
       // check through all boxes to see if the URL is still needed
-      const stillNeeded = boxes.some((box) => (storage.get<BoxDescription>(box)?.urls || []).includes(newURL));
+      const stillNeeded = boxes.some((box) => (storage?.get<BoxDescription>(box)?.urls || []).includes(newURL));
 
       return stillNeeded ? Promise.resolve(false) : window.caches.open(cacheName).then((store) => store.delete(newURL));
     },
@@ -318,7 +318,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
     async (storeName: string = STORE_NAME) => {
       if (!checkSupport()) return [];
 
-      const cached = storage.get<BoxDescription>(storeName);
+      const cached = storage?.get<BoxDescription>(storeName);
 
       // if the box doesn't exist, nothing to remove
       if (!cached) return [];
@@ -328,12 +328,12 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
       );
 
       // Keep track of all boxes
-      const boxes = storage.get<string[]>(storeList) || [];
-      storage.set<string[]>(
+      const boxes = storage?.get<string[]>(storeList) || [];
+      storage?.set<string[]>(
         storeList,
         boxes.filter((n) => n !== storeName),
       );
-      storage.remove(storeName);
+      storage?.remove(storeName);
 
       return response;
     },
@@ -346,7 +346,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
       const { storeName = STORE_NAME } = options || {};
 
-      const cached = storage.get<BoxDescription>(storeName);
+      const cached = storage?.get<BoxDescription>(storeName);
       const checkURL = absolutePath(url);
 
       if (cached && cached.cacheName !== cacheName)
@@ -371,7 +371,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
     (storeName: string = STORE_NAME): Promise<Array<{ url: string; status: cache_status_enum }>> => {
       if (!checkSupport()) return Promise.resolve([]);
 
-      const cached = storage.get<BoxDescription>(storeName);
+      const cached = storage?.get<BoxDescription>(storeName);
 
       if (!cached) return Promise.resolve([]);
 
@@ -386,7 +386,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
     async (storeName: string = STORE_NAME) => {
       if (!checkSupport()) return true;
 
-      const cached = storage.get<BoxDescription>(storeName);
+      const cached = storage?.get<BoxDescription>(storeName);
 
       // if the box doesn't exist, nothing to heal
       if (!cached) return true;
@@ -425,7 +425,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
   const healAll = useCallback<ManualCacheFunctions['healAll']>(() => {
     if (!checkSupport()) return Promise.resolve([]);
 
-    const cached = storage.get<string[]>(storeList) || [];
+    const cached = storage?.get<string[]>(storeList) || [];
 
     return Promise.all(cached.map((storeName) => healByStoreName(storeName)));
   }, [healByStoreName, storage, storeList]);
