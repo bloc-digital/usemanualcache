@@ -3,20 +3,41 @@ import { renderHook, act } from '@testing-library/react';
 import useManualCache, { cache_status, type cache_status_enum } from './useManualCache';
 
 // Mock useLocalStorage
-const store: Record<string, any> = {};
+const store: Record<string, unknown> = {};
+let staleReadsAfterWrite = false;
+let staleReadsRemaining = 0;
+const faultedReadKeys = new Set<string>();
+const storage = {
+  get: (key: string) => {
+    if (faultedReadKeys.has(key)) return null;
+    if (staleReadsRemaining > 0) {
+      staleReadsRemaining -= 1;
+
+      return null;
+    }
+
+    return store[key];
+  },
+  set: (key: string, value: unknown) => {
+    store[key] = value;
+    if (staleReadsAfterWrite) staleReadsRemaining = 10;
+  },
+  remove: (key: string) => {
+    delete store[key];
+  },
+  init: (key: string, value: unknown) => {
+    store[key] = value;
+  },
+};
 jest.mock('@blocdigital/uselocalstorage', () => {
-  return () => ({
-    get: (key: string) => store[key],
-    set: (key: string, value: any) => {
-      store[key] = value;
+  return {
+    __esModule: true,
+    default: () => storage,
+    StorageEvents: {
+      acquire: () => storage,
+      release: jest.fn(),
     },
-    remove: (key: string) => {
-      delete store[key];
-    },
-    init: (key: string, value: any) => {
-      store[key] = value;
-    },
-  });
+  };
 });
 
 // Mock window.caches
@@ -28,6 +49,7 @@ beforeAll(() => {
     value: {
       open: jest.fn(async (name: string) => {
         if (!cacheStore[name]) cacheStore[name] = new Map();
+
         return {
           keys: jest.fn(async () => Array.from(cacheStore[name].keys()).map((url) => ({ url }))),
           match: jest.fn(async (url: string) => cacheStore[name].get(url)),
@@ -48,9 +70,31 @@ beforeAll(() => {
 });
 
 beforeAll(() => {
-  jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => {
-    const urlString = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
-    return createMockResponse(urlString);
+  Object.defineProperty(global, 'Response', {
+    value: class Response {
+      body: string;
+      status: number;
+      ok: boolean;
+
+      constructor(body: string = '', init: { status?: number } = {}) {
+        this.body = body;
+        this.status = init.status || 200;
+        this.ok = this.status >= 200 && this.status < 300;
+      }
+
+      async text() {
+        return this.body;
+      }
+    },
+    configurable: true,
+  });
+  Object.defineProperty(global, 'fetch', {
+    value: jest.fn(async (url: RequestInfo | URL) => {
+      const urlString = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+
+      return createMockResponse(urlString);
+    }),
+    configurable: true,
   });
 });
 
@@ -58,6 +102,9 @@ beforeEach(() => {
   // Clear all mock storage and caches
   for (const key in cacheStore) delete cacheStore[key];
   for (const key in store) delete store[key];
+  staleReadsAfterWrite = false;
+  staleReadsRemaining = 0;
+  faultedReadKeys.clear();
 });
 
 describe('useManualCache', () => {
@@ -83,6 +130,39 @@ describe('useManualCache', () => {
     expect(responses).toHaveLength(2);
     expect(responses[0]).toBeInstanceOf(Response);
     expect(responses[1]).toBeInstanceOf(Response);
+  });
+
+  it('addCache should not purge fresh assets when storage reads are stale after writes', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const url = 'https://example.com/ios-webkit';
+    let response: Response | undefined;
+    staleReadsAfterWrite = true;
+
+    await act(async () => {
+      [response] = await result.current.addCache('test-cache', [url]);
+    });
+
+    expect(response).toBeInstanceOf(Response);
+    expect(cacheStore['test-cache'].has(url)).toBe(true);
+  });
+
+  it('should skip destructive cache tidying when the store list cannot be read', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const trackedUrl = 'https://example.com/tracked';
+    const untrackedUrl = 'https://example.com/untracked';
+
+    await act(async () => {
+      await result.current.addCache('test-cache', [trackedUrl], { storeName: 'box1' });
+    });
+    cacheStore['test-cache'].set(untrackedUrl, createMockResponse(untrackedUrl));
+    faultedReadKeys.add('bd_boxes');
+
+    await act(async () => {
+      await result.current.healByStoreName('box1');
+    });
+
+    expect(cacheStore['test-cache'].has(trackedUrl)).toBe(true);
+    expect(cacheStore['test-cache'].has(untrackedUrl)).toBe(true);
   });
 
   it('getCache should retrieve cached response', async () => {
@@ -140,6 +220,25 @@ describe('useManualCache', () => {
     });
 
     expect(response).toBeUndefined();
+  });
+
+  it('removeCache should preserve URLs referenced by another box when writes make reads stale', async () => {
+    const { result } = renderHook(() => useManualCache());
+    const url = 'https://example.com/shared';
+
+    await act(async () => {
+      await result.current.addCache('test-cache', [url], { storeName: 'box1' });
+      await result.current.addCache('test-cache', [url], { storeName: 'box2' });
+    });
+
+    let removed = true;
+    staleReadsAfterWrite = true;
+    await act(async () => {
+      removed = await result.current.removeCache('test-cache', url, { storeName: 'box1' });
+    });
+
+    expect(removed).toBe(false);
+    expect(cacheStore['test-cache'].has(url)).toBe(true);
   });
 
   it('validateCache should return correct status', async () => {
