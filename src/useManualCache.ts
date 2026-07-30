@@ -183,18 +183,40 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
    * Ensures a cache store only contains valid entries by removing outdated URLs.
    *
    * @param {string} cacheName - Name of cache vault to tidy.
+   * @param {BoxDescription[]} [activeBoxes] - In-memory box state to use instead of reading storage.
    * @returns {Promise<void>} Resolves when tidy is complete.
    */
   const tidyCache = useCallback(
-    (cacheName: string): Promise<void> => {
+    (cacheName: string, activeBoxes?: BoxDescription[]): Promise<void> => {
       if (!checkSupport()) return Promise.resolve();
 
-      const cached = storage?.get<string[]>(storeList) || [];
+      let boxes = activeBoxes;
+
+      if (!boxes) {
+        const storeNames = storage?.get<string[]>(storeList);
+
+        if (!storeNames) {
+          console.warn(`[useManualCache] Storage read failed for ${storeList}. Skipping cache tidy.`);
+
+          return Promise.resolve();
+        }
+
+        boxes = [];
+        for (const storeName of storeNames) {
+          const box = storage?.get<BoxDescription>(storeName);
+
+          if (!box) {
+            console.warn(`[useManualCache] Storage read failed for ${storeName}. Skipping cache tidy.`);
+
+            return Promise.resolve();
+          }
+
+          boxes.push(box);
+        }
+      }
 
       // get all urls from relevant boxes to see what we need to keep
-      const combinedList = cached.reduce<string[]>((list, storeName) => {
-        const box = storage?.get<BoxDescription>(storeName);
-
+      const combinedList = boxes.reduce<string[]>((list, box) => {
         return box?.cacheName === cacheName ? [...list, ...box.urls] : list;
       }, []);
 
@@ -217,7 +239,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
       // Keep track of all boxes
       const boxes = storage?.get<string[]>(storeList) || [];
-      if (!boxes.includes(storeName)) storage?.set<string[]>(storeList, [...boxes, storeName]);
+      const updatedBoxes = Array.from(new Set([...boxes, storeName]));
 
       // update the cache list in local storage
       const box = storage?.get<BoxDescription>(storeName);
@@ -227,8 +249,22 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
       const newURLs = entries.map(({ url }) => absolutePath(url));
       const _cached = Array.from(new Set([...(box?.urls || []), ...newURLs]));
+      const updatedBox = { cacheName, urls: _cached };
+      const boxSnapshots: BoxDescription[] = [];
 
-      storage?.set<BoxDescription>(storeName, { cacheName, urls: _cached });
+      for (const name of updatedBoxes) {
+        const snapshot = name === storeName ? updatedBox : storage?.get<BoxDescription>(name);
+
+        if (!snapshot) {
+          console.warn(`[useManualCache] Storage read failed for ${name}. Cache tidy will be skipped.`);
+          break;
+        }
+
+        boxSnapshots.push(snapshot);
+      }
+
+      storage?.set<string[]>(storeList, updatedBoxes);
+      storage?.set<BoxDescription>(storeName, updatedBox);
 
       // open the cache
       const myCache = await window.caches.open(cacheName);
@@ -250,7 +286,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
         console.warn(`Error adding to cache ${cacheName}: ${err}`);
       }
 
-      await tidyCache(cacheName);
+      if (boxSnapshots.length === updatedBoxes.length) await tidyCache(cacheName, boxSnapshots);
 
       // get the data from the freshly fetched cache and pass it back
       const cache = await window.caches.open(cacheName);
@@ -280,7 +316,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
       return cached?.cacheName;
     },
-    [],
+    [storage],
   );
 
   const removeCache = useCallback<ManualCacheFunctions['removeCache']>(
@@ -290,8 +326,7 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
       const { storeName = STORE_NAME } = options || {};
 
       // Keep track of all boxes
-      const boxes = storage?.get<string[]>(storeList) || [];
-      if (!boxes.includes(storeName)) storage?.set<string[]>(storeList, [...boxes, storeName]);
+      const boxes = storage?.get<string[]>(storeList);
 
       // update the cache list in local storage
       const cached = storage?.get<BoxDescription>(storeName);
@@ -304,12 +339,30 @@ export default function useManualCache(storeList: string = STORE_LIST): ManualCa
 
       const newURL = absolutePath(url);
       const newList = cached.urls.filter((cachedUrl) => cachedUrl !== newURL);
+      let referencesVerified = Boolean(boxes);
+      let stillNeeded = false;
+
+      for (const boxName of boxes || []) {
+        if (boxName === storeName) continue;
+
+        const box = storage?.get<BoxDescription>(boxName);
+        if (!box) {
+          referencesVerified = false;
+          break;
+        }
+
+        if (box.urls.includes(newURL)) {
+          stillNeeded = true;
+          break;
+        }
+      }
+
+      if (boxes && !boxes.includes(storeName)) storage?.set<string[]>(storeList, [...boxes, storeName]);
       storage?.set<BoxDescription>(storeName, { cacheName, urls: newList });
 
-      // check through all boxes to see if the URL is still needed
-      const stillNeeded = boxes.some((box) => (storage?.get<BoxDescription>(box)?.urls || []).includes(newURL));
-
-      return stillNeeded ? Promise.resolve(false) : window.caches.open(cacheName).then((store) => store.delete(newURL));
+      return !referencesVerified || stillNeeded
+        ? Promise.resolve(false)
+        : window.caches.open(cacheName).then((store) => store.delete(newURL));
     },
     [storage, storeList],
   );
