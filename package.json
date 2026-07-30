@@ -19,7 +19,10 @@
   },
   "homepage": "https://github.com/bloc-digital/usemanualcache#readme",
   "jest": {
-    "testEnvironment": "./jest.setup.cjs"
+    "testEnvironment": "jsdom",
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    }
   },
   "types": "dist/types/index.d.ts",
   "main": "dist/cjs/index.js",
@@ -48,6 +51,7 @@
     "test": "jest"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@babel/core": "^7.29.0",
     "@babel/preset-env": "^7.29.5",
     "@babel/preset-typescript": "^7.28.5",
@@ -64,6 +68,7 @@
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^16.5.0",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
     "prettier": "^3.8.3",
@@ -77,6 +82,6 @@
     "react": "^17 || ^18 || ^19"
   },
   "dependencies": {
-    "@blocdigital/uselocalstorage": "^0.4.1"
+    "@blocdigital/uselocalstorage": "^0.4.3"
   }
 }
